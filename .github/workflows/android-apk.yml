@@ -70,66 +70,15 @@ jobs:
         run: |
           set -o pipefail
           gradle --no-daemon --console=plain :app:assembleDebug 2>&1 | tee build.log
-      - name: Show actionable build errors
-        if: failure()
-        shell: bash
-        run: |
-          echo '## Muza Glasses APK build errors' >> "$GITHUB_STEP_SUMMARY"
-          echo 'Full build.log is attached as a workflow artifact.' >> "$GITHUB_STEP_SUMMARY"
-          echo '### Compiler diagnostics' >> "$GITHUB_STEP_SUMMARY"
-          printf '%s\n' '```text' >> "$GITHUB_STEP_SUMMARY"
-          grep -E -i -m 40 '(^e: |error:|^FAILURE:|^\* What went wrong:|Unresolved reference|Compilation error|Could not resolve|Execution failed)' build.log | head -40 >> "$GITHUB_STEP_SUMMARY" || true
-          printf '%s\n' '```' >> "$GITHUB_STEP_SUMMARY"
-          while IFS= read -r line; do
-            if [[ "$line" == *"e: "* || "$line" == *" error:"* ]]; then
-              clean="${line//'%'/'%25'}"
-              clean="${clean//
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: MuzaGlasses-build-log
-          path: build.log
-          if-no-files-found: ignore
-          retention-days: 7
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: MuzaGlasses-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
-          if-no-files-found: error
-          retention-days: 14
-\r'/'%0D'}"
-              clean="${clean//
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: MuzaGlasses-build-log
-          path: build.log
-          if-no-files-found: ignore
-          retention-days: 7
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: MuzaGlasses-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
-          if-no-files-found: error
-          retention-days: 14
-\n'/'%0A'}"
-              echo "::error title=Kotlin compiler::${clean:0:900}"
-            fi
-          done < <(grep -E -i -m 15 '(e: | error:)' build.log || true)
       - name: Upload build diagnostics
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: MuzaGlasses-build-log
           path: build.log
-          if-no-files-found: ignore
-          retention-days: 7
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: MuzaGlasses-debug-apk
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
-          retention-days: 14
