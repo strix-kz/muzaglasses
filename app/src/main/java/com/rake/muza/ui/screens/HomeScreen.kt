@@ -93,6 +93,7 @@ fun HomeScreen(
     onWhatDoYouSee: () -> Unit,
     onTranslate: () -> Unit,
     onToggleVoice: () -> Unit,
+    onOpenMap: () -> Unit,
     onDismissHud: () -> Unit,
 ) {
     val strings by LanguageManager.strings.collectAsState()
@@ -393,7 +394,7 @@ fun HomeScreen(
                 }
             }
 
-            // Location + Wake Word "Muza" Status Row
+            // Location (tappable -> GPS Map) + Wake Word "Muza" Status Row
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -402,13 +403,17 @@ fun HomeScreen(
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
+                        .weight(1f, fill = false)
                         .clip(RoundedCornerShape(12.dp))
                         .background(MuzaColors.HudBackground)
-                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                        .border(1.dp, MuzaColors.Border, RoundedCornerShape(12.dp))
+                        .clickable(onClick = onOpenMap)
+                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                        .testTag("home_gps_location_badge"),
                 ) {
                     Icon(
                         imageVector = Icons.Rounded.LocationOn,
-                        contentDescription = "Location",
+                        contentDescription = "GPS Map",
                         tint = MuzaColors.BlueGlow,
                         modifier = Modifier.size(15.dp),
                     )
@@ -418,8 +423,11 @@ fun HomeScreen(
                         style = MaterialTheme.typography.labelSmall,
                         color = MuzaColors.TextPrimary,
                         maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
+
+                Spacer(modifier = Modifier.width(8.dp))
 
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -449,26 +457,25 @@ fun HomeScreen(
                     )
                     Spacer(modifier = Modifier.width(5.dp))
                     Text(
-                        text = if (voiceState.isListening) "«Muza» ON" else "«Muza»",
+                        text = if (voiceState.isListening) {
+                            "«Muza» • ${voiceState.activePreset.displayName}"
+                        } else {
+                            "«Muza»"
+                        },
                         style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
                         color = if (voiceState.isListening) MuzaColors.TextPrimary else MuzaColors.TextSecondary,
+                        maxLines = 1,
                     )
                 }
             }
 
-            // Quick AI & Voice Smart-Glasses Action Strip
+            // Quick AI, Vision, Translation, GPS Map & Voice Smart-Glasses Action Strip
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                QuickSmartActionChip(
-                    icon = Icons.Rounded.AutoAwesome,
-                    label = strings.askQuestion,
-                    testTag = "home_ask_ai_button",
-                    onClick = onAskAi,
-                )
                 QuickSmartActionChip(
                     icon = Icons.Rounded.Visibility,
                     label = strings.whatDoYouSee,
@@ -480,6 +487,18 @@ fun HomeScreen(
                     label = strings.translateAction,
                     testTag = "home_translate_button",
                     onClick = onTranslate,
+                )
+                QuickSmartActionChip(
+                    icon = Icons.Rounded.LocationOn,
+                    label = strings.mapTitle,
+                    testTag = "home_open_map_chip",
+                    onClick = onOpenMap,
+                )
+                QuickSmartActionChip(
+                    icon = Icons.Rounded.AutoAwesome,
+                    label = strings.askQuestion,
+                    testTag = "home_ask_ai_button",
+                    onClick = onAskAi,
                 )
                 QuickSmartActionChip(
                     icon = Icons.Rounded.Mic,

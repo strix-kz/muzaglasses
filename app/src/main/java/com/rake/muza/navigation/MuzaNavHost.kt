@@ -16,6 +16,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.rounded.Map
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
@@ -33,7 +34,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -65,6 +65,7 @@ import com.rake.muza.ui.screens.GlassesSelectionScreen
 import com.rake.muza.ui.screens.HistoryScreen
 import com.rake.muza.ui.screens.HomeScreen
 import com.rake.muza.ui.screens.HowToConnectScreen
+import com.rake.muza.ui.screens.MapScreen
 import com.rake.muza.ui.screens.ProfileSettingsScreen
 import com.rake.muza.ui.screens.RequirementsScreen
 import com.rake.muza.ui.screens.SplashScreen
@@ -79,6 +80,7 @@ import kotlinx.serialization.Serializable
 @Serializable data object RouteHowToConnect
 @Serializable data object RouteConnected
 @Serializable data object RouteHome
+@Serializable data object RouteMap
 @Serializable data object RouteAiChat
 @Serializable data object RouteHistory
 @Serializable data object RouteProfile
@@ -152,6 +154,7 @@ private fun AuthenticatedMuzaShell(
     val cameraState by appViewModel.cameraState.collectAsStateWithLifecycle()
     val hudState by appViewModel.hudState.collectAsStateWithLifecycle()
     val voiceState by appViewModel.voiceState.collectAsStateWithLifecycle()
+    val locationState by appViewModel.locationState.collectAsStateWithLifecycle()
     val allPhotos by appViewModel.allPhotos.collectAsStateWithLifecycle()
     val savedPhotos by appViewModel.savedPhotos.collectAsStateWithLifecycle()
     val aiState by aiChatViewModel.state.collectAsStateWithLifecycle()
@@ -161,6 +164,12 @@ private fun AuthenticatedMuzaShell(
             ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
         )
     }
+    var hasLocationPermission by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+                ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        )
+    }
     var pendingAiPrompt by remember { mutableStateOf<String?>(null) }
 
     val requiredPermissions = remember {
@@ -168,6 +177,7 @@ private fun AuthenticatedMuzaShell(
             add(Manifest.permission.CAMERA)
             add(Manifest.permission.RECORD_AUDIO)
             add(Manifest.permission.ACCESS_FINE_LOCATION)
+            add(Manifest.permission.ACCESS_COARSE_LOCATION)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 add(Manifest.permission.BLUETOOTH_CONNECT)
                 add(Manifest.permission.BLUETOOTH_SCAN)
@@ -180,6 +190,12 @@ private fun AuthenticatedMuzaShell(
     ) { grants ->
         hasCameraPermission = grants[Manifest.permission.CAMERA] == true ||
             ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+        hasLocationPermission = grants[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+            grants[Manifest.permission.ACCESS_COARSE_LOCATION] == true ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        if (hasLocationPermission) {
+            appViewModel.startGpsTracking()
+        }
         if (grants[Manifest.permission.RECORD_AUDIO] == true) {
             appViewModel.voiceManager.startWakeWordListening()
         }
@@ -196,6 +212,8 @@ private fun AuthenticatedMuzaShell(
             permissionsLauncher.launch(requiredPermissions)
         } else {
             hasCameraPermission = true
+            hasLocationPermission = true
+            appViewModel.startGpsTracking()
             appViewModel.voiceManager.startWakeWordListening()
         }
     }
@@ -207,6 +225,13 @@ private fun AuthenticatedMuzaShell(
             when (event) {
                 AppNavigationEvent.OpenHome -> {
                     navController.navigate(RouteHome) {
+                        popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                        launchSingleTop = true
+                        restoreState = true
+                    }
+                }
+                AppNavigationEvent.OpenMap -> {
+                    navController.navigate(RouteMap) {
                         popUpTo(navController.graph.findStartDestination().id) { saveState = true }
                         launchSingleTop = true
                         restoreState = true
@@ -235,6 +260,7 @@ private fun AuthenticatedMuzaShell(
     val currentDest = navBackStackEntry?.destination
     val showBottomBar = currentDest != null && (
         currentDest.hasRoute<RouteHome>() ||
+            currentDest.hasRoute<RouteMap>() ||
             currentDest.hasRoute<RouteAiChat>() ||
             currentDest.hasRoute<RouteHistory>() ||
             currentDest.hasRoute<RouteProfile>()
@@ -242,6 +268,7 @@ private fun AuthenticatedMuzaShell(
 
     val bottomTabs = listOf(
         BottomNavTab(RouteHome, strings.navHome, Icons.Rounded.Home, "nav_tab_home"),
+        BottomNavTab(RouteMap, strings.navMap, Icons.Rounded.Map, "nav_tab_map"),
         BottomNavTab(RouteAiChat, strings.navStyles, Icons.Rounded.AutoAwesome, "nav_tab_ai"),
         BottomNavTab(RouteHistory, strings.navHistory, Icons.Rounded.History, "nav_tab_history"),
         BottomNavTab(RouteProfile, strings.navProfile, Icons.Rounded.Person, "nav_tab_profile"),
@@ -264,6 +291,7 @@ private fun AuthenticatedMuzaShell(
                     bottomTabs.forEach { tab ->
                         val selected = when (tab.route) {
                             RouteHome -> currentDest?.hasRoute<RouteHome>() == true
+                            RouteMap -> currentDest?.hasRoute<RouteMap>() == true
                             RouteAiChat -> currentDest?.hasRoute<RouteAiChat>() == true
                             RouteHistory -> currentDest?.hasRoute<RouteHistory>() == true
                             RouteProfile -> currentDest?.hasRoute<RouteProfile>() == true
@@ -382,6 +410,33 @@ private fun AuthenticatedMuzaShell(
                         onWhatDoYouSee = appViewModel::describeWhatIsInFront,
                         onTranslate = { appViewModel.translateCurrentView() },
                         onToggleVoice = appViewModel::toggleWakeWordListening,
+                        onOpenMap = {
+                            navController.navigate(RouteMap) {
+                                popUpTo(RouteHome) { saveState = true }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                        },
+                        onDismissHud = { appViewModel.displayManager.clear() },
+                    )
+                }
+
+                composable<RouteMap> {
+                    MapScreen(
+                        locationState = locationState,
+                        hudState = hudState,
+                        hasLocationPermission = hasLocationPermission,
+                        onRequestLocationPermission = {
+                            permissionsLauncher.launch(
+                                arrayOf(
+                                    Manifest.permission.ACCESS_FINE_LOCATION,
+                                    Manifest.permission.ACCESS_COARSE_LOCATION,
+                                )
+                            )
+                        },
+                        onStartGps = appViewModel::startGpsTracking,
+                        onSpeakWhereAmI = appViewModel::speakCurrentLocation,
+                        onSendToHud = appViewModel::sendLocationToHud,
                         onDismissHud = { appViewModel.displayManager.clear() },
                     )
                 }
@@ -402,7 +457,7 @@ private fun AuthenticatedMuzaShell(
                         },
                         onSendPrompt = { prompt ->
                             aiChatViewModel.sendPrompt(prompt) { reply ->
-                                appViewModel.voiceManager.speak(reply.take(260))
+                                appViewModel.voiceManager.speak(reply.take(360))
                                 appViewModel.displayManager.showAiResponse(reply)
                             }
                         },
@@ -427,7 +482,9 @@ private fun AuthenticatedMuzaShell(
                         voiceState = voiceState,
                         displayManager = appViewModel.displayManager,
                         onSelectLanguage = appViewModel::setLanguage,
-                        onSelectVoiceGender = appViewModel::setVoiceGender,
+                        onSelectVoicePreset = appViewModel::selectVoicePreset,
+                        onPreviewVoicePreset = appViewModel::previewVoicePreset,
+                        onToggleNeuralVoice = appViewModel::setUseNeuralKazakhVoice,
                         onSelectVoiceSpeed = appViewModel::setVoiceSpeed,
                         onTestVoice = appViewModel::testVoice,
                         onManageGlasses = { navController.navigate(RouteGlassesSelection) },

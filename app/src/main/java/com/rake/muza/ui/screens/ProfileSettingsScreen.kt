@@ -23,9 +23,14 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.BatteryChargingFull
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.HeadsetMic
 import androidx.compose.material.icons.rounded.Language
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.PowerSettingsNew
+import androidx.compose.material.icons.rounded.RecordVoiceOver
 import androidx.compose.material.icons.rounded.SmartDisplay
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.Visibility
@@ -57,6 +62,7 @@ import com.rake.muza.core.ConnectionUiState
 import com.rake.muza.core.DisplayManager
 import com.rake.muza.core.LanguageManager
 import com.rake.muza.core.MuzaFeatures
+import com.rake.muza.core.MuzaVoicePreset
 import com.rake.muza.core.VoiceGender
 import com.rake.muza.core.VoiceSpeed
 import com.rake.muza.core.VoiceUiState
@@ -73,7 +79,9 @@ fun ProfileSettingsScreen(
     voiceState: VoiceUiState,
     displayManager: DisplayManager,
     onSelectLanguage: (AppLanguage) -> Unit,
-    onSelectVoiceGender: (VoiceGender) -> Unit,
+    onSelectVoicePreset: (MuzaVoicePreset) -> Unit,
+    onPreviewVoicePreset: (MuzaVoicePreset) -> Unit,
+    onToggleNeuralVoice: (Boolean) -> Unit,
     onSelectVoiceSpeed: (VoiceSpeed) -> Unit,
     onTestVoice: () -> Unit,
     onManageGlasses: () -> Unit,
@@ -113,7 +121,7 @@ fun ProfileSettingsScreen(
             color = MuzaColors.TextPrimary,
         )
 
-        // User Profile Card with Initials Avatar + Premium Badge
+        // User Profile Card
         MuzaCard(modifier = Modifier.fillMaxWidth(), isHighlighted = true) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
@@ -200,43 +208,108 @@ fun ProfileSettingsScreen(
             }
         }
 
-        // 2. Voice Settings: Female / Male + Slow / Medium / Fast + Test Voice
+        // 2. Enhanced Kazakh Voice Gallery (6 Selectable Named Voices + Gemini Neural Kazakh Voice + Speed)
         MuzaCard(modifier = Modifier.fillMaxWidth()) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Rounded.VolumeUp,
+                        contentDescription = strings.voiceSection,
+                        tint = MuzaColors.BlueGlow,
+                        modifier = Modifier.size(22.dp),
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column {
+                        Text(
+                            text = "${strings.voiceMenu} • ${voiceState.activePreset.displayName}",
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                            color = MuzaColors.TextPrimary,
+                        )
+                        Text(
+                            text = strings.voiceGallerySubtitle,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MuzaColors.TextSecondary,
+                        )
+                    }
+                }
+                if (voiceState.isGlassesAudioRouted) {
+                    Icon(
+                        imageVector = Icons.Rounded.HeadsetMic,
+                        contentDescription = strings.glassesAudioActive,
+                        tint = MuzaColors.Emerald,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // AI Neural Kazakh Voice Switch
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(MuzaColors.SurfaceElevated)
+                    .border(1.dp, MuzaColors.BluePrimary.copy(alpha = 0.4f), RoundedCornerShape(14.dp))
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 Icon(
-                    imageVector = Icons.AutoMirrored.Rounded.VolumeUp,
-                    contentDescription = strings.voiceSection,
+                    imageVector = Icons.Rounded.AutoAwesome,
+                    contentDescription = strings.neuralKazakhVoiceLabel,
                     tint = MuzaColors.BlueGlow,
                     modifier = Modifier.size(20.dp),
                 )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = strings.voiceMenu,
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                    color = MuzaColors.TextPrimary,
+                Spacer(modifier = Modifier.width(10.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = strings.neuralKazakhVoiceLabel,
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MuzaColors.TextPrimary,
+                    )
+                    Text(
+                        text = strings.neuralKazakhVoiceDesc,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MuzaColors.TextSecondary,
+                    )
+                }
+                Switch(
+                    checked = voiceState.useNeuralKazakhVoice,
+                    onCheckedChange = onToggleNeuralVoice,
+                    modifier = Modifier.testTag("neural_voice_switch"),
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = Color.White,
+                        checkedTrackColor = MuzaColors.BluePrimary,
+                    ),
                 )
             }
+
             Spacer(modifier = Modifier.height(12.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                SegmentChoiceButton(
-                    label = strings.femaleVoice,
-                    selected = voiceState.gender == VoiceGender.FEMALE,
-                    testTag = "voice_gender_female",
-                    onClick = { onSelectVoiceGender(VoiceGender.FEMALE) },
-                    modifier = Modifier.weight(1f),
-                )
-                SegmentChoiceButton(
-                    label = strings.maleVoice,
-                    selected = voiceState.gender == VoiceGender.MALE,
-                    testTag = "voice_gender_male",
-                    onClick = { onSelectVoiceGender(VoiceGender.MALE) },
-                    modifier = Modifier.weight(1f),
-                )
+
+            // 6 Selectable Voice Personas (3 Female + 3 Male)
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                MuzaVoicePreset.entries.forEach { preset ->
+                    val isSelected = preset == voiceState.activePreset
+                    VoicePresetRow(
+                        preset = preset,
+                        subtitle = preset.subtitle(currentLang),
+                        genderTag = if (preset.gender == VoiceGender.FEMALE) strings.femaleVoice else strings.maleVoice,
+                        previewLabel = strings.previewVoiceShort,
+                        isSelected = isSelected,
+                        onSelect = { onSelectVoicePreset(preset) },
+                        onPreview = {
+                            onSelectVoicePreset(preset)
+                            onPreviewVoicePreset(preset)
+                        },
+                    )
+                }
             }
-            Spacer(modifier = Modifier.height(12.dp))
+
+            Spacer(modifier = Modifier.height(14.dp))
             Text(
                 text = strings.speedLabel,
                 style = MaterialTheme.typography.labelLarge,
@@ -269,9 +342,10 @@ fun ProfileSettingsScreen(
                     modifier = Modifier.weight(1f),
                 )
             }
+
             Spacer(modifier = Modifier.height(12.dp))
             MuzaGradientButton(
-                text = strings.testVoiceButton,
+                text = "${strings.testVoiceButton} (${voiceState.activePreset.displayName})",
                 onClick = onTestVoice,
                 testTag = "test_voice_button",
                 height = 48.dp,
@@ -404,7 +478,7 @@ fun ProfileSettingsScreen(
             }
         }
 
-        // 6. Sign Out Card (matching red "Шығу" row in screenshot #2)
+        // 6. Sign Out Card
         MuzaCard(
             modifier = Modifier
                 .fillMaxWidth()
@@ -438,6 +512,101 @@ fun ProfileSettingsScreen(
         }
 
         Spacer(modifier = Modifier.height(12.dp))
+    }
+}
+
+@Composable
+private fun VoicePresetRow(
+    preset: MuzaVoicePreset,
+    subtitle: String,
+    genderTag: String,
+    previewLabel: String,
+    isSelected: Boolean,
+    onSelect: () -> Unit,
+    onPreview: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(if (isSelected) MuzaColors.BluePrimary.copy(alpha = 0.20f) else MuzaColors.SurfaceElevated)
+            .border(
+                width = if (isSelected) 1.5.dp else 1.dp,
+                color = if (isSelected) MuzaColors.BlueGlow else MuzaColors.Border,
+                shape = RoundedCornerShape(14.dp),
+            )
+            .clickable(onClick = onSelect)
+            .padding(horizontal = 12.dp, vertical = 10.dp)
+            .testTag("voice_preset_${preset.id.lowercase()}"),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(36.dp)
+                .clip(CircleShape)
+                .background(if (isSelected) MuzaColors.BluePrimary else MuzaColors.SurfaceHighlight),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = if (isSelected) Icons.Rounded.Check else Icons.Rounded.RecordVoiceOver,
+                contentDescription = preset.displayName,
+                tint = Color.White,
+                modifier = Modifier.size(18.dp),
+            )
+        }
+        Spacer(modifier = Modifier.width(10.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = preset.displayName,
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                    color = MuzaColors.TextPrimary,
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = "• $genderTag",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MuzaColors.BlueSoft,
+                    maxLines = 1,
+                )
+            }
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.labelSmall,
+                color = MuzaColors.TextSecondary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Spacer(modifier = Modifier.width(8.dp))
+        Surface(
+            modifier = Modifier
+                .height(34.dp)
+                .clip(RoundedCornerShape(17.dp))
+                .clickable(onClick = onPreview)
+                .testTag("preview_voice_${preset.id.lowercase()}"),
+            shape = RoundedCornerShape(17.dp),
+            color = MuzaColors.BlueDeep.copy(alpha = 0.55f),
+            border = BorderStroke(1.dp, MuzaColors.BlueGlow.copy(alpha = 0.65f)),
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.PlayArrow,
+                    contentDescription = previewLabel,
+                    tint = Color.White,
+                    modifier = Modifier.size(16.dp),
+                )
+                Spacer(modifier = Modifier.width(2.dp))
+                Text(
+                    text = previewLabel,
+                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                    color = Color.White,
+                )
+            }
+        }
     }
 }
 

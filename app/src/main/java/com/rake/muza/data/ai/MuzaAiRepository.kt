@@ -23,10 +23,10 @@ class MuzaAiRepository {
             modelName = "gemini-3.8-flash",
             systemInstruction = content {
                 text(
-                    "You are Muza, a helpful, concise smart-glasses AI assistant inside the Muza Glasses app. " +
-                        "Always reply in the user's selected language (Kazakh, Russian, or English). " +
-                        "Keep replies natural, warm, practical, and easy to read aloud via Text-to-Speech " +
-                        "or show on an AR glasses corner display."
+                    "You are Muza, an intelligent, warm, fluent smart-glasses AI assistant inside Muza Glasses. " +
+                        "When Kazakh is selected, speak rich, idiomatic, grammatically accurate Kazakh (қазақ тілінде еркін, көркем әрі анық сөйле), " +
+                        "never mixing awkward robotic translations. Give complete, genuinely helpful answers that sound great when spoken aloud " +
+                        "through smart glasses speakers, without markdown asterisks or bullet symbols."
                 )
             }
         )
@@ -34,9 +34,9 @@ class MuzaAiRepository {
 
     private fun languageInstruction(lang: AppLanguage = LanguageManager.currentLanguage): String =
         when (lang) {
-            AppLanguage.KK -> "Жауапты тек таза әрі табиғи қазақ тілінде бер."
-            AppLanguage.RU -> "Отвечай на естественном и грамотном русском языке."
-            AppLanguage.EN -> "Reply clearly and naturally in English."
+            AppLanguage.KK -> "Жауапты тек таза, сауатты, табиғи қазақ тілінде бер. Жұлдызша (*) немесе markdown белгілерін қолданба."
+            AppLanguage.RU -> "Отвечай на естественном, грамотном русском языке без символов markdown."
+            AppLanguage.EN -> "Reply clearly and naturally in spoken English without markdown symbols."
         }
 
     fun streamChatReply(
@@ -76,6 +76,44 @@ class MuzaAiRepository {
         }
     }
 
+    /**
+     * Answers any spoken question from the smart glasses user via Gemini 3.8 Flash
+     * with a complete, clear spoken answer (plus optional live camera context).
+     */
+    suspend fun answerVoiceQuestion(
+        question: String,
+        cameraContext: Bitmap? = null,
+        locationContext: String = "",
+        language: AppLanguage = LanguageManager.currentLanguage,
+    ): Result<String> = try {
+        val response = withTimeout(AI_TIMEOUT_MS) {
+            val locNote = if (locationContext.isNotBlank()) " User GPS location: $locationContext." else ""
+            val prompt = "${languageInstruction(language)}$locNote " +
+                "Answer the user's spoken question completely and clearly in 2-4 natural spoken sentences.\n" +
+                "Question: $question"
+            model.generateContent(
+                content {
+                    if (cameraContext != null) image(cameraContext)
+                    text(prompt)
+                }
+            )
+        }
+        val text = response.text?.trim()
+        if (!text.isNullOrBlank()) {
+            Result.success(text)
+        } else {
+            Result.failure(IllegalStateException("AI returned an empty answer."))
+        }
+    } catch (e: TimeoutCancellationException) {
+        Log.e(TAG, "Voice question timed out", e)
+        Result.failure(e)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Log.e(TAG, "Voice question failed", e)
+        Result.failure(e)
+    }
+
     suspend fun describeCameraScene(
         bitmap: Bitmap?,
         locationContext: String,
@@ -84,12 +122,14 @@ class MuzaAiRepository {
         val response = withTimeout(AI_TIMEOUT_MS) {
             val prompt = if (bitmap != null) {
                 "${languageInstruction(language)} " +
-                    "Describe clearly in 1-2 short sentences what is in front of the smart glasses user in this photo. " +
-                    "Location context: $locationContext."
+                    "You are looking through the user's smart glasses camera right now. " +
+                    "Describe thoroughly yet naturally in 2-3 clear spoken sentences what is directly in front of the user: " +
+                    "main objects, people, surroundings, colors, and any visible text or signs. " +
+                    "GPS context: $locationContext."
             } else {
                 "${languageInstruction(language)} " +
-                    "The user asked what is in front of them while wearing Muza Glasses at $locationContext. " +
-                    "Give a concise, helpful 1-2 sentence response."
+                    "The user asked what is in front of them while wearing Muza Glasses at $locationContext, " +
+                    "but the camera feed is still initializing. Politely tell them in 1-2 sentences to point the glasses camera forward and try again."
             }
             model.generateContent(
                 content {
@@ -120,21 +160,21 @@ class MuzaAiRepository {
         targetLanguage: AppLanguage = LanguageManager.currentLanguage,
     ): Result<Pair<String, String>> = try {
         val targetName = when (targetLanguage) {
-            AppLanguage.KK -> "Kazakh"
-            AppLanguage.RU -> "Russian"
-            AppLanguage.EN -> "English"
+            AppLanguage.KK -> "natural, accurate Kazakh (қазақ тілі)"
+            AppLanguage.RU -> "natural Russian"
+            AppLanguage.EN -> "natural English"
         }
         val response = withTimeout(AI_TIMEOUT_MS) {
             val instruction = if (!sourceText.isNullOrBlank()) {
-                "Translate the following text into $targetName. Reply in exactly two lines:\n" +
-                    "ORIGINAL: <original text>\nTRANSLATED: <translated text>\nText: $sourceText"
+                "Translate the following spoken text into $targetName. Reply in exactly two lines without markdown:\n" +
+                    "ORIGINAL: <original text>\nTRANSLATED: <clear translation>\nText: $sourceText"
             } else if (bitmap != null) {
-                "Read any visible sign or text in this image and translate it into $targetName. " +
-                    "If no text is visible, identify the main object and translate its name. " +
-                    "Reply in exactly two lines:\nORIGINAL: <detected text>\nTRANSLATED: <translated text>"
+                "Read any visible sign, label, menu, screen text, or object in front of the smart glasses camera and translate it into $targetName. " +
+                    "If there is visible text, translate all key text clearly. If no text is visible, name the main object and translate it. " +
+                    "Reply in exactly two lines without markdown:\nORIGINAL: <detected text or object>\nTRANSLATED: <clear translation>"
             } else {
-                "Translate the sign 'OPEN' into $targetName. Reply in exactly two lines:\n" +
-                    "ORIGINAL: OPEN\nTRANSLATED: <translated text>"
+                "Translate the phrase 'Welcome to Muza Glasses' into $targetName. Reply in exactly two lines:\n" +
+                    "ORIGINAL: Welcome to Muza Glasses\nTRANSLATED: <translation>"
             }
             model.generateContent(
                 content {

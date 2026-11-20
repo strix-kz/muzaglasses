@@ -22,8 +22,11 @@ import com.rake.muza.core.DisplayHudPayload
 import com.rake.muza.core.DisplayManager
 import com.rake.muza.core.LanguageManager
 import com.rake.muza.core.MuzaFeatures
+import com.rake.muza.core.MuzaLocationManager
+import com.rake.muza.core.MuzaLocationState
 import com.rake.muza.core.MuzaVoiceCommand
 import com.rake.muza.core.MuzaVoiceManager
+import com.rake.muza.core.MuzaVoicePreset
 import com.rake.muza.core.RayBanConnectionManager
 import com.rake.muza.core.RayBanModel
 import com.rake.muza.core.VoiceGender
@@ -78,6 +81,7 @@ sealed interface AppNavigationEvent {
     data object OpenAiChat : AppNavigationEvent
     data class OpenAiChatWithPrompt(val prompt: String) : AppNavigationEvent
     data object OpenHome : AppNavigationEvent
+    data object OpenMap : AppNavigationEvent
 }
 
 class MuzaAppViewModel(
@@ -95,10 +99,12 @@ class MuzaAppViewModel(
     val connectionManager = RayBanConnectionManager(application)
     val displayManager = DisplayManager()
     val voiceManager = MuzaVoiceManager(application, ::handleVoiceCommand)
+    val locationManager = MuzaLocationManager(application)
 
     val connectionState: StateFlow<ConnectionUiState> = connectionManager.state
     val hudState: StateFlow<DisplayHudPayload> = displayManager.hudState
     val voiceState: StateFlow<VoiceUiState> = voiceManager.state
+    val locationState: StateFlow<MuzaLocationState> = locationManager.state
 
     val allPhotos: StateFlow<List<PhotoHistoryEntity>> = photoRepository.allPhotos
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), emptyList())
@@ -124,6 +130,17 @@ class MuzaAppViewModel(
 
     init {
         bootstrapUserProfile()
+        observeGpsIntoCameraBadge()
+    }
+
+    private fun observeGpsIntoCameraBadge() {
+        viewModelScope.launch {
+            locationManager.state.collect { loc ->
+                if (loc.streetAddress.isNotBlank()) {
+                    _cameraState.update { it.copy(locationLabel = loc.streetAddress) }
+                }
+            }
+        }
     }
 
     private fun bootstrapUserProfile() {
@@ -157,7 +174,6 @@ class MuzaAppViewModel(
                             voiceManager.syncLanguage()
                         }
                         connectionManager.selectModel(RayBanModel.fromId(profile.selectedGlassesModel))
-                        voiceManager.setVoiceGender(VoiceGender.fromCode(profile.voiceGender))
                         voiceManager.setVoiceSpeed(VoiceSpeed.fromCode(profile.voiceSpeed))
                     }
                 }
@@ -168,12 +184,41 @@ class MuzaAppViewModel(
         connectionManager.initializeToolkit(activity)
     }
 
-    fun updateLatestCameraFrame(bitmap: Bitmap) {
-        val old = latestCameraFrame
-        latestCameraFrame = bitmap
-        if (old != null && old !== bitmap && !old.isRecycled) {
-            // Let GC reclaim safely to avoid recycling while Compose/AI reads it
+    fun startGpsTracking() {
+        locationManager.startTracking()
+    }
+
+    fun refreshGpsLocation() {
+        locationManager.refreshNow()
+        val summary = locationManager.spokenLocationSummary()
+        showBanner(summary)
+    }
+
+    fun speakCurrentLocation() {
+        locationManager.startTracking()
+        val summary = locationManager.spokenLocationSummary()
+        voiceManager.speak(summary)
+        sendLocationToHud()
+        showBanner(summary)
+    }
+
+    fun sendLocationToHud() {
+        val loc = locationState.value
+        val coords = String.format(Locale.US, "%.4f, %.4f", loc.latitude, loc.longitude)
+        val speedNote = if (loc.speedKmh > 0.5f) {
+            String.format(Locale.US, "%.1f km/h • %s", loc.speedKmh, coords)
+        } else {
+            coords
         }
+        displayManager.showNavigation(
+            locationTitle = loc.streetAddress,
+            directionText = speedNote,
+            batteryPercent = connectionState.value.deviceInfo.batteryPercent,
+        )
+    }
+
+    fun updateLatestCameraFrame(bitmap: Bitmap) {
+        latestCameraFrame = bitmap
     }
 
     fun getLatestCameraFrameCopy(): Bitmap? {
@@ -202,11 +247,16 @@ class MuzaAppViewModel(
         val model = connectionState.value.selectedModel
         connectionManager.connect(model = model, pairingPin = pairingPin) { session ->
             displayManager.attachToSession(session)
+            // Route hands-free glasses microphone & speaker and enable "Muza" wake-word immediately
+            voiceManager.setGlassesAudioRouting(true)
+            voiceManager.startWakeWordListening()
+            val connectedMsg = "${model.title} ${LanguageManager.currentStrings.connectedSuffix}"
             displayManager.showText(
                 title = "Muza Glasses",
-                message = "${model.title} ${LanguageManager.currentStrings.connectedSuffix}",
+                message = connectedMsg,
                 autoHideMs = 4_000L,
             )
+            voiceManager.speak("$connectedMsg. ${LanguageManager.currentStrings.wakeResponse}")
             onConnected()
         }
         viewModelScope.launch {
@@ -215,6 +265,7 @@ class MuzaAppViewModel(
     }
 
     fun disconnectGlasses() {
+        voiceManager.setGlassesAudioRouting(false)
         displayManager.detach()
         connectionManager.disconnect()
     }
@@ -222,10 +273,31 @@ class MuzaAppViewModel(
     fun setLanguage(lang: AppLanguage) {
         LanguageManager.setLanguage(lang)
         voiceManager.syncLanguage()
-        _cameraState.update { it.copy(locationLabel = LanguageManager.currentStrings.locationDefault) }
+        if (!locationState.value.hasGpsFix) {
+            _cameraState.update { it.copy(locationLabel = LanguageManager.currentStrings.locationDefault) }
+        }
         viewModelScope.launch {
             cloudRepository.updatePreferences(languageCode = lang.code)
         }
+    }
+
+    fun selectVoicePreset(preset: MuzaVoicePreset) {
+        voiceManager.setVoicePreset(preset)
+        viewModelScope.launch {
+            cloudRepository.updatePreferences(voiceGenderCode = preset.gender.code)
+        }
+    }
+
+    fun previewVoicePreset(preset: MuzaVoicePreset) {
+        voiceManager.speak(
+            text = preset.sampleSentence(LanguageManager.currentLanguage),
+            force = true,
+            overridePreset = preset,
+        )
+    }
+
+    fun setUseNeuralKazakhVoice(enabled: Boolean) {
+        voiceManager.setUseNeuralKazakhVoice(enabled)
     }
 
     fun setVoiceGender(gender: VoiceGender) {
@@ -243,7 +315,8 @@ class MuzaAppViewModel(
     }
 
     fun testVoice() {
-        voiceManager.speak(LanguageManager.currentStrings.howAreYouResponse, force = true)
+        val preset = voiceState.value.activePreset
+        voiceManager.speak(preset.sampleSentence(LanguageManager.currentLanguage), force = true)
     }
 
     fun toggleWakeWordListening() {
@@ -254,8 +327,15 @@ class MuzaAppViewModel(
         if (voiceState.value.isListening) {
             voiceManager.stopWakeWordListening()
         } else {
+            if (connectionState.value.isConnected) {
+                voiceManager.setGlassesAudioRouting(true)
+            }
             voiceManager.startWakeWordListening()
         }
+    }
+
+    fun submitQuickVoiceCommand(phrase: String) {
+        voiceManager.processTranscript(phrase, bypassWakeWord = true)
     }
 
     fun toggleFlash() {
@@ -285,7 +365,9 @@ class MuzaAppViewModel(
         }
         viewModelScope.launch {
             val bitmap = capturedBitmap ?: getLatestCameraFrameCopy() ?: createFallbackFrameBitmap()
-            val city = _cameraState.value.locationLabel.substringBefore(",").trim().ifBlank { "Алматы" }
+            val city = locationState.value.city.ifBlank {
+                _cameraState.value.locationLabel.substringBefore(",").trim().ifBlank { "Алматы" }
+            }
             val modelName = connectionState.value.deviceInfo.deviceName
             val initialDescription = when (LanguageManager.currentLanguage) {
                 AppLanguage.KK -> "$modelName камерасымен түсірілді • $city"
@@ -314,7 +396,6 @@ class MuzaAppViewModel(
                 glassesModel = savedEntity.glassesModel,
             )
 
-            // Enrich photo with a real Gemini Vision caption in background when AI Vision is enabled
             if (MuzaFeatures.aiVisionDescribe) {
                 aiRepository.describeCameraScene(
                     bitmap = bitmap,
@@ -398,10 +479,23 @@ class MuzaAppViewModel(
                 displayManager.showAiResponse(description)
                 voiceManager.speak(description)
                 showBanner(description)
+                cloudRepository.saveAiMessage(
+                    role = "user",
+                    text = LanguageManager.currentStrings.whatDoYouSee,
+                    languageCode = LanguageManager.currentLanguage.code,
+                    hasAttachment = frame != null,
+                )
+                cloudRepository.saveAiMessage(
+                    role = "model",
+                    text = description,
+                    languageCode = LanguageManager.currentLanguage.code,
+                    hasAttachment = false,
+                )
             }.onFailure { error ->
                 _cameraState.update { it.copy(isAnalyzingVision = false) }
                 val msg = error.localizedMessage ?: "AI analysis failed"
                 showBanner(msg)
+                voiceManager.speak(msg)
             }
         }
     }
@@ -433,11 +527,54 @@ class MuzaAppViewModel(
                     translatedText = pair.second,
                     languagePair = "AUTO → $targetCode",
                 )
-                voiceManager.speak(pair.second)
+                val spoken = when (LanguageManager.currentLanguage) {
+                    AppLanguage.KK -> "Аудармасы: ${pair.second}"
+                    AppLanguage.RU -> "Перевод: ${pair.second}"
+                    AppLanguage.EN -> "Translation: ${pair.second}"
+                }
+                voiceManager.speak(spoken)
                 showBanner("${pair.first} → ${pair.second}")
             }.onFailure { error ->
                 _cameraState.update { it.copy(isAnalyzingVision = false) }
                 showBanner(error.localizedMessage ?: "Translation failed")
+            }
+        }
+    }
+
+    private fun answerSpokenAiQuestion(question: String) {
+        if (!MuzaFeatures.aiConversation) {
+            showBanner(LanguageManager.currentStrings.featureDisabledNotice)
+            return
+        }
+        viewModelScope.launch {
+            _cameraState.update { it.copy(isAnalyzingVision = true) }
+            val lang = LanguageManager.currentLanguage
+            cloudRepository.saveAiMessage(
+                role = "user",
+                text = question,
+                languageCode = lang.code,
+                hasAttachment = false,
+            )
+            val result = aiRepository.answerVoiceQuestion(
+                question = question,
+                cameraContext = null,
+                locationContext = _cameraState.value.locationLabel,
+                language = lang,
+            )
+            result.onSuccess { answer ->
+                _cameraState.update { it.copy(isAnalyzingVision = false) }
+                displayManager.showAiResponse(answer)
+                voiceManager.speak(answer)
+                showBanner(answer)
+                cloudRepository.saveAiMessage(
+                    role = "model",
+                    text = answer,
+                    languageCode = lang.code,
+                    hasAttachment = false,
+                )
+            }.onFailure { error ->
+                _cameraState.update { it.copy(isAnalyzingVision = false) }
+                showBanner(error.localizedMessage ?: "AI request failed")
             }
         }
     }
@@ -471,6 +608,7 @@ class MuzaAppViewModel(
                 _cameraState.update { it.copy(isLiveCameraActive = true) }
                 _navigationEvents.tryEmit(AppNavigationEvent.OpenHome)
                 voiceManager.speak(LanguageManager.currentStrings.cameraOnResponse)
+                showBanner(LanguageManager.currentStrings.cameraOnResponse)
             }
             MuzaVoiceCommand.StartVideo -> {
                 _navigationEvents.tryEmit(AppNavigationEvent.OpenHome)
@@ -488,12 +626,21 @@ class MuzaAppViewModel(
             MuzaVoiceCommand.StopRecording -> {
                 stopVideoRecording()
             }
+            MuzaVoiceCommand.OpenMapAndGps -> {
+                locationManager.startTracking()
+                _navigationEvents.tryEmit(AppNavigationEvent.OpenMap)
+                val summary = "${LanguageManager.currentStrings.mapOpenedResponse} ${locationManager.spokenLocationSummary()}"
+                voiceManager.speak(summary)
+                sendLocationToHud()
+                showBanner(summary)
+            }
+            MuzaVoiceCommand.WhereAmI -> {
+                locationManager.startTracking()
+                _navigationEvents.tryEmit(AppNavigationEvent.OpenMap)
+                speakCurrentLocation()
+            }
             is MuzaVoiceCommand.GeneralAiQuery -> {
-                if (MuzaFeatures.aiConversation) {
-                    _navigationEvents.tryEmit(AppNavigationEvent.OpenAiChatWithPrompt(command.query))
-                } else {
-                    showBanner(LanguageManager.currentStrings.featureDisabledNotice)
-                }
+                answerSpokenAiQuestion(command.query)
             }
         }
     }
@@ -502,7 +649,7 @@ class MuzaAppViewModel(
         bannerJob?.cancel()
         _cameraState.update { it.copy(statusBanner = message) }
         bannerJob = viewModelScope.launch {
-            delay(4_200L)
+            delay(5_500L)
             _cameraState.update { it.copy(statusBanner = null) }
         }
     }
@@ -543,6 +690,7 @@ class MuzaAppViewModel(
         super.onCleared()
         recordingJob?.cancel()
         bannerJob?.cancel()
+        locationManager.stopTracking()
         voiceManager.release()
         displayManager.detach()
         connectionManager.stopBluetoothScan()
