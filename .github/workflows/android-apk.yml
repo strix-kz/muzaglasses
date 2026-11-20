@@ -59,27 +59,28 @@ jobs:
           }
           JSON
           fi
-      - name: Configure persistent debug signing
+      - name: Restore debug signing key from cache
+        uses: actions/cache@v4
+        with:
+          path: debug.keystore
+          key: muza-debug-signing-key-v1
+      - name: Configure debug signing key
         env:
           ANDROID_DEBUG_KEYSTORE_BASE64: ${{ secrets.ANDROID_DEBUG_KEYSTORE_BASE64 }}
         shell: bash
         run: |
-          mkdir -p "$HOME/.android"
           if [ -n "$ANDROID_DEBUG_KEYSTORE_BASE64" ]; then
-            printf '%s' "$ANDROID_DEBUG_KEYSTORE_BASE64" | base64 --decode > "$HOME/.android/debug.keystore"
-            chmod 600 "$HOME/.android/debug.keystore"
-            echo "Restored persistent signing key"
-          else
-            echo "::warning::ANDROID_DEBUG_KEYSTORE_BASE64 is not set. Debug signing key may change on every build, so Google OAuth SHA-1 cannot be reliably registered."
+            printf '%s' "$ANDROID_DEBUG_KEYSTORE_BASE64" | base64 --decode > debug.keystore
+            echo "Restored signing key from secret"
+          elif [ ! -f debug.keystore ]; then
+            keytool -genkeypair -v -keystore debug.keystore -alias androiddebugkey \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass android -keypass android \
+              -dname "CN=Android Debug,O=Android,C=US"
+            echo "::warning::Signing key is persisted via GitHub Actions cache for development only. Use a protected keystore secret for production."
           fi
-      - name: Show signing certificate fingerprints
-        shell: bash
-        run: |
-          if [ -f "$HOME/.android/debug.keystore" ]; then
-            keytool -list -v -keystore "$HOME/.android/debug.keystore" -alias androiddebugkey -storepass android -keypass android | grep -E 'SHA1:|SHA256:' || true
-          else
-            echo "Debug keystore will be created by Android Gradle Plugin during build."
-          fi
+          chmod 600 debug.keystore
+          keytool -list -v -keystore debug.keystore -alias androiddebugkey -storepass android -keypass android | grep -E 'SHA1:|SHA256:'
       - name: Build debug APK and capture compiler diagnostics
         shell: bash
         run: |
