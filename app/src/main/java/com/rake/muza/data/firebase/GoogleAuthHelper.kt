@@ -17,7 +17,6 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.GoogleAuthProvider
 import com.google.firebase.auth.auth
-import com.rake.muza.R
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.channels.awaitClose
@@ -49,11 +48,12 @@ fun attemptSilentGoogleSignIn(
         return
     }
     val clientId = try {
-        context.getString(R.string.default_web_client_id)
+        context.resources.getIdentifier("default_web_client_id", "string", context.packageName).takeIf { it != 0 }?.let(context::getString).orEmpty()
     } catch (_: Exception) {
         onUnauthenticated()
         return
     }
+    if (clientId.isBlank()) { onUnauthenticated(); return }
     val googleIdOption = GetGoogleIdOption.Builder()
         .setFilterByAuthorizedAccounts(true)
         .setServerClientId(clientId)
@@ -90,9 +90,13 @@ fun launchInteractiveGoogleSignIn(
     onAuthCancelled: () -> Unit,
 ) {
     val clientId = try {
-        context.getString(R.string.default_web_client_id)
+        context.resources.getIdentifier("default_web_client_id", "string", context.packageName).takeIf { it != 0 }?.let(context::getString).orEmpty()
     } catch (_: Exception) {
         onAuthError("Google Sign-In configuration missing: default_web_client_id not found")
+        return
+    }
+    if (clientId.isBlank()) {
+        onAuthError("Google Sign-In requires a configured Firebase web client ID")
         return
     }
     val signInOption = GetSignInWithGoogleOption.Builder(serverClientId = clientId).build()
