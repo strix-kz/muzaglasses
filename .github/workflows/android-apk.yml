@@ -65,8 +65,28 @@ jobs:
             -keyalg RSA -keysize 2048 -validity 10000 \
             -storepass android -keypass android \
             -dname "CN=Android Debug,O=Android,C=US"
-      - name: Build debug APK
-        run: gradle --no-daemon :app:assembleDebug
+      - name: Build debug APK and capture compiler diagnostics
+        shell: bash
+        run: |
+          set -o pipefail
+          gradle --no-daemon --console=plain :app:assembleDebug 2>&1 | tee build.log
+      - name: Show actionable build errors
+        if: failure()
+        shell: bash
+        run: |
+          echo '## Muza Glasses APK build errors' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Full build.log is attached as a workflow artifact.' >> "$GITHUB_STEP_SUMMARY"
+          echo '\`\`\`text' >> "$GITHUB_STEP_SUMMARY"
+          grep -E -i -m 40 '(^e: |error:|^FAILURE:|^\* What went wrong:|Unresolved reference|Compilation error|Could not resolve|Execution failed)' build.log | head -40 >> "$GITHUB_STEP_SUMMARY" || true
+          echo '\`\`\`' >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload build diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: MuzaGlasses-build-log
+          path: build.log
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
