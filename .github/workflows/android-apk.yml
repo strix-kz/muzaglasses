@@ -59,12 +59,27 @@ jobs:
           }
           JSON
           fi
-      - name: Generate local debug signing key
+      - name: Configure persistent debug signing
+        env:
+          ANDROID_DEBUG_KEYSTORE_BASE64: ${{ secrets.ANDROID_DEBUG_KEYSTORE_BASE64 }}
+        shell: bash
         run: |
-          keytool -genkeypair -v -keystore debug.keystore -alias androiddebugkey \
-            -keyalg RSA -keysize 2048 -validity 10000 \
-            -storepass android -keypass android \
-            -dname "CN=Android Debug,O=Android,C=US"
+          mkdir -p "$HOME/.android"
+          if [ -n "$ANDROID_DEBUG_KEYSTORE_BASE64" ]; then
+            printf '%s' "$ANDROID_DEBUG_KEYSTORE_BASE64" | base64 --decode > "$HOME/.android/debug.keystore"
+            chmod 600 "$HOME/.android/debug.keystore"
+            echo "Restored persistent signing key"
+          else
+            echo "::warning::ANDROID_DEBUG_KEYSTORE_BASE64 is not set. Debug signing key may change on every build, so Google OAuth SHA-1 cannot be reliably registered."
+          fi
+      - name: Show signing certificate fingerprints
+        shell: bash
+        run: |
+          if [ -f "$HOME/.android/debug.keystore" ]; then
+            keytool -list -v -keystore "$HOME/.android/debug.keystore" -alias androiddebugkey -storepass android -keypass android | grep -E 'SHA1:|SHA256:' || true
+          else
+            echo "Debug keystore will be created by Android Gradle Plugin during build."
+          fi
       - name: Build debug APK and capture compiler diagnostics
         shell: bash
         run: |
@@ -76,6 +91,11 @@ jobs:
         with:
           name: MuzaGlasses-build-log
           path: build.log
+      - name: Print actual debug APK signing fingerprints
+        if: success()
+        shell: bash
+        run: |
+          "$ANDROID_SDK_ROOT/build-tools/36.0.0/apksigner" verify --print-certs app/build/outputs/apk/debug/app-debug.apk | grep -E 'SHA-1|SHA-256' || true
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
