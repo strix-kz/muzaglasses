@@ -1,0 +1,8 @@
+{
+  "name": "Muza Glasses",
+  "description": "Smart glasses companion app for Ray-Ban Meta, Oakley Meta, and Meta Display Glasses with Kazakh/Russian/English voice control, Gemini AI vision & translation, live camera, and photo history.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

@@ -1,0 +1,159 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global safety net: deny all access by default.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidLanguage(lang) {
+      return lang is string && lang in ['KK', 'RU', 'EN'];
+    }
+
+    function isValidVoiceGender(gender) {
+      return gender is string && gender in ['FEMALE', 'MALE'];
+    }
+
+    function isValidVoiceSpeed(speed) {
+      return speed is string && speed in ['SLOW', 'MEDIUM', 'FAST'];
+    }
+
+    function isValidUserProfile(data) {
+      return data.userId is string && data.userId == request.auth.uid &&
+             data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 80 &&
+             (!('email' in data) || (data.email is string && data.email.size() <= 120)) &&
+             isValidLanguage(data.preferredLanguage) &&
+             isValidVoiceGender(data.voiceGender) &&
+             isValidVoiceSpeed(data.voiceSpeed) &&
+             data.selectedGlassesModel is string && data.selectedGlassesModel.size() >= 1 && data.selectedGlassesModel.size() <= 60 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidAiChatRecord(data) {
+      return data.userId is string && data.userId == request.auth.uid &&
+             data.role is string && data.role in ['user', 'model'] &&
+             data.text is string && data.text.size() >= 1 && data.text.size() <= 4000 &&
+             isValidLanguage(data.language) &&
+             data.hasAttachment is bool &&
+             data.createdAt is timestamp && data.createdAt <= request.time;
+    }
+
+    function isValidCloudPhotoRecord(data) {
+      return data.userId is string && data.userId == request.auth.uid &&
+             data.localMediaUri is string && data.localMediaUri.size() <= 500 &&
+             data.city is string && data.city.size() >= 1 && data.city.size() <= 100 &&
+             data.dateLabel is string && data.dateLabel.size() >= 1 && data.dateLabel.size() <= 60 &&
+             data.description is string && data.description.size() <= 2000 &&
+             data.favorite is bool &&
+             data.glassesModel is string && data.glassesModel.size() >= 1 && data.glassesModel.size() <= 80 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    match /users/{userId} {
+      allow get: if isOwner(userId) && isValidId(userId);
+      allow list: if false;
+
+      allow create: if isOwner(userId) &&
+                       isValidId(userId) &&
+                       incoming().keys().hasAll([
+                         'userId', 'displayName', 'preferredLanguage',
+                         'voiceGender', 'voiceSpeed', 'selectedGlassesModel',
+                         'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'userId', 'displayName', 'email', 'preferredLanguage',
+                         'voiceGender', 'voiceSpeed', 'selectedGlassesModel',
+                         'createdAt', 'updatedAt'
+                       ]) &&
+                       isValidUserProfile(incoming());
+
+      allow update: if isOwner(userId) &&
+                       isValidId(userId) &&
+                       isValidUserProfile(incoming()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly([
+                         'displayName', 'email', 'preferredLanguage',
+                         'voiceGender', 'voiceSpeed', 'selectedGlassesModel',
+                         'updatedAt'
+                       ]);
+
+      allow delete: if isOwner(userId) && isValidId(userId);
+
+      match /ai_messages/{messageId} {
+        allow get: if isOwner(userId) && isValidId(messageId);
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(messageId) &&
+                         incoming().keys().hasAll([
+                           'userId', 'role', 'text', 'language', 'hasAttachment', 'createdAt'
+                         ]) &&
+                         incoming().keys().hasOnly([
+                           'userId', 'role', 'text', 'language', 'hasAttachment', 'createdAt'
+                         ]) &&
+                         isValidAiChatRecord(incoming());
+
+        allow update: if false;
+
+        allow delete: if isOwner(userId) && isValidId(messageId);
+      }
+
+      match /photo_records/{recordId} {
+        allow get: if isOwner(userId) && isValidId(recordId);
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(recordId) &&
+                         incoming().keys().hasAll([
+                           'userId', 'localMediaUri', 'city', 'dateLabel',
+                           'description', 'favorite', 'glassesModel',
+                           'createdAt', 'updatedAt'
+                         ]) &&
+                         incoming().keys().hasOnly([
+                           'userId', 'localMediaUri', 'city', 'dateLabel',
+                           'description', 'favorite', 'glassesModel',
+                           'createdAt', 'updatedAt'
+                         ]) &&
+                         isValidCloudPhotoRecord(incoming());
+
+        allow update: if isOwner(userId) &&
+                         isValidId(recordId) &&
+                         isValidCloudPhotoRecord(incoming()) &&
+                         incoming().userId == existing().userId &&
+                         incoming().createdAt == existing().createdAt &&
+                         (
+                           incoming().diff(existing()).affectedKeys().hasOnly(['favorite', 'updatedAt']) ||
+                           incoming().diff(existing()).affectedKeys().hasOnly(['description', 'updatedAt']) ||
+                           incoming().diff(existing()).affectedKeys().hasOnly(['favorite', 'description', 'city', 'updatedAt'])
+                         );
+
+        allow delete: if isOwner(userId) && isValidId(recordId);
+      }
+    }
+  }
+}

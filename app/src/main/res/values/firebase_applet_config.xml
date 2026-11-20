@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<resources>
+    <string name="firestore_database_id" translatable="false">ai-studio-android-muzaglas-b8950af2-5238-4eab-ac45-ca1c3159231d</string>
+    <string name="recaptcha_site_key" translatable="false">6LdnRSkuAAAAANrf6nTlFNQ5ND62N4yXrIrltJXW</string>
+</resources>

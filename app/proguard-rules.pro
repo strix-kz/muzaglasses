@@ -1,0 +1,4 @@
+-keepattributes Signature,InnerClasses,EnclosingMethod
+-keepattributes *Annotation*
+-keep class com.rake.muza.data.cloud.** { *; }
+-keep class com.rake.muza.data.local.** { *; }

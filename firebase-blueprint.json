@@ -1,0 +1,174 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Authenticated Muza Glasses user profile and voice/language/device preferences.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Owner Firebase Auth UID."
+        },
+        "displayName": {
+          "type": "string",
+          "description": "User display name."
+        },
+        "email": {
+          "type": "string",
+          "description": "User email address (private to owner)."
+        },
+        "preferredLanguage": {
+          "type": "string",
+          "enum": ["KK", "RU", "EN"],
+          "description": "Selected UI and voice assistant language."
+        },
+        "voiceGender": {
+          "type": "string",
+          "enum": ["FEMALE", "MALE"],
+          "description": "Selected Muza TTS voice gender."
+        },
+        "voiceSpeed": {
+          "type": "string",
+          "enum": ["SLOW", "MEDIUM", "FAST"],
+          "description": "Selected Muza TTS speech rate."
+        },
+        "selectedGlassesModel": {
+          "type": "string",
+          "description": "Selected Ray-Ban / Oakley / Meta Display glasses model key."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp set via FieldValue.serverTimestamp() on create."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp set via FieldValue.serverTimestamp() on create/update."
+        }
+      },
+      "required": [
+        "userId",
+        "displayName",
+        "preferredLanguage",
+        "voiceGender",
+        "voiceSpeed",
+        "selectedGlassesModel",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "AiChatRecord": {
+      "title": "AiChatRecord",
+      "description": "A single message turn in the user's Muza Gemini AI assistant chat.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Owner Firebase Auth UID."
+        },
+        "role": {
+          "type": "string",
+          "enum": ["user", "model"],
+          "description": "Message author role."
+        },
+        "text": {
+          "type": "string",
+          "description": "Message body text."
+        },
+        "language": {
+          "type": "string",
+          "enum": ["KK", "RU", "EN"],
+          "description": "Language of the message."
+        },
+        "hasAttachment": {
+          "type": "boolean",
+          "description": "Whether the prompt included a camera/gallery photo."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp set via FieldValue.serverTimestamp()."
+        }
+      },
+      "required": [
+        "userId",
+        "role",
+        "text",
+        "language",
+        "hasAttachment",
+        "createdAt"
+      ]
+    },
+    "CloudPhotoRecord": {
+      "title": "CloudPhotoRecord",
+      "description": "Cloud-synced metadata for photos captured and saved locally to Room and MediaStore.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Owner Firebase Auth UID."
+        },
+        "localMediaUri": {
+          "type": "string",
+          "description": "Device MediaStore URI or local asset identifier."
+        },
+        "city": {
+          "type": "string",
+          "description": "Capture city name."
+        },
+        "dateLabel": {
+          "type": "string",
+          "description": "Formatted capture date label."
+        },
+        "description": {
+          "type": "string",
+          "description": "AI-generated or user-edited photo description."
+        },
+        "favorite": {
+          "type": "boolean",
+          "description": "Whether the user marked this photo as saved/favorite."
+        },
+        "glassesModel": {
+          "type": "string",
+          "description": "Glasses model used to capture the photo."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp set via FieldValue.serverTimestamp()."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp set via FieldValue.serverTimestamp()."
+        }
+      },
+      "required": [
+        "userId",
+        "localMediaUri",
+        "city",
+        "dateLabel",
+        "description",
+        "favorite",
+        "glassesModel",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Private user profile and glasses/voice/language settings scoped strictly to owner."
+    },
+    "/users/{userId}/ai_messages/{messageId}": {
+      "schema": { "$ref": "#/entities/AiChatRecord" },
+      "description": "Private AI chat history messages scoped strictly to owner."
+    },
+    "/users/{userId}/photo_records/{recordId}": {
+      "schema": { "$ref": "#/entities/CloudPhotoRecord" },
+      "description": "Private cloud metadata records for saved glasses photos."
+    }
+  }
+}
